@@ -266,7 +266,7 @@ namespace System.Management.Automation.Remoting
                         // Wrap the provided handle so it can be passed to the registration function
                         SafeWaitHandle safeWaitHandle = new SafeWaitHandle(creationRequestDetails.shutdownNotificationHandle, false); // Owned by WinRM
                         EventWaitHandle eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset);
-                        ClrFacade.SetSafeWaitHandle(eventWaitHandle, safeWaitHandle);
+                        eventWaitHandle.SafeWaitHandle = safeWaitHandle;
 
                         // Register shutdown notification handle
                         this.registeredShutDownWaitHandle = ThreadPool.RegisterWaitForSingleObject(
@@ -698,6 +698,8 @@ namespace System.Management.Automation.Remoting
                 }
             }
 
+            WSManPluginInstance.SetThreadProperties(creationRequestDetails);
+
             bool isRcvOpShuttingDown = (context.isShuttingDown) && (context.isReceiveOperation);
             bool isRcvOp = context.isReceiveOperation;
             bool isShuttingDown = context.isShuttingDown;
@@ -796,6 +798,8 @@ namespace System.Management.Automation.Remoting
                     isClosed = true;
                 }
             }
+
+            WSManPluginInstance.SetThreadProperties(creationRequestDetails);
 
             bool isRcvOp = context.isReceiveOperation;
             // only one thread will be here.

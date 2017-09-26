@@ -21,6 +21,9 @@ dotnet-uninstall-debian-packages.sh
 # VS auto-generated files for csproj files
 *.csproj.user
 
+# Visual Studio IDE directory
+.vs/
+
 # Project Rider IDE files
 .idea.powershell/
 
@@ -38,9 +41,13 @@ dotnet-uninstall-debian-packages.sh
 *.zip
 *.rpm
 *.pkg
+*.nupkg
 
 # ignore the version file as it is generated at build time
 powershell.version
+
+# ignore the telemetry semaphore file
+DELETE_ME_TO_DISABLE_CONSOLEHOST_TELEMETRY
 
 # default location for produced nuget packages
 /nuget-artifacts
@@ -57,8 +64,12 @@ gen
 #VS Code files
 .vscode
 
-# OS X
+# macOS
 .DS_Store
 
 # TestsResults
 TestsResults*.xml
+
+# Resharper settings
+PowerShell.sln.DotSettings.user
+

@@ -17,11 +17,6 @@ using System.Management.Automation.Language;
 using System.Management.Automation.Runspaces;
 using Dbg = System.Management.Automation.Diagnostics;
 
-#if CORECLR
-// Use stubs for SystemException and SerializationInfo
-using Microsoft.PowerShell.CoreClr.Stubs;
-#endif
-
 #pragma warning disable 1634, 1691 // Stops compiler from warning about unknown warnings
 
 namespace System.Management.Automation
@@ -726,13 +721,6 @@ namespace System.Management.Automation
                     throw InterpreterError.NewInterpreterException(null, typeof(ParseException),
                         errorPosition, "InvalidSplitOptionCombination", ParserStrings.InvalidSplitOptionCombination);
                 }
-            }
-
-            if ((options & (SplitOptions.Multiline | SplitOptions.Singleline)) ==
-                  (SplitOptions.Multiline | SplitOptions.Singleline))
-            {
-                throw InterpreterError.NewInterpreterException(null, typeof(ParseException),
-                    errorPosition, "InvalidSplitOptionCombination", ParserStrings.InvalidSplitOptionCombination);
             }
 
             if ((options & SplitOptions.SimpleMatch) != 0)

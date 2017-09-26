@@ -227,13 +227,13 @@
         function test-collectionbinding1 {
             [CmdletBinding()]
             param (
-            [array]$Parameter1 = "",
-            [int[]]$Parameter2 = ""
+            [array]$Parameter1,
+            [int[]]$Parameter2 
             )
 
             Process {
                 $result = ""
-                if($Parameter1 -ne $null)
+                if($null -ne $Parameter1)
                 {
                     $result += " P1"
                     foreach ($object in $Parameter1)
@@ -241,7 +241,7 @@
                         $result = $result + ":" + $object.GetType().Name + "," + $object
                     }
                 }
-                if($Parameter2 -ne $null)
+                if($null -ne $Parameter2)
                 {
                     $result += " P2"
                     foreach ($object in $Parameter2)
@@ -253,8 +253,8 @@
             }
         }
 
-        $result = test-collectionbinding1 -Parameter1 1
-        $result | Should Be "P1:Int32,1"
+        $result = test-collectionbinding1 -Parameter1 1 -Parameter2 2
+        $result | Should Be "P1:Int32,1 P2:Int32,2"
     }
 
     It "Verify that a dynamic parameter and an alias can't have the same name" {
@@ -278,6 +278,55 @@
             $_.CategoryInfo | Should match "MetadataException"
             $_.Exception.Message | should match "Parameter1"
             $_.Exception.Message | should match "Parameter2"
+        }
+    }
+
+    Context "Use automatic variables as default value for parameters" {
+        BeforeAll {
+            ## Explicit use of 'CmdletBinding' make it a script cmdlet
+            $test1 = @'
+                [CmdletBinding()]
+                param ($Root = $PSScriptRoot)
+                "[$Root]"
+'@
+            ## Use of 'Parameter' implicitly make it a script cmdlet
+            $test2 = @'
+                param (
+                    [Parameter()]
+                    $Root = $PSScriptRoot
+                )
+                "[$Root]"
+'@
+            $tempDir = Join-Path -Path $TestDrive -ChildPath "DefaultValueTest"
+            $test1File = Join-Path -Path $tempDir -ChildPath "test1.ps1"
+            $test2File = Join-Path -Path $tempDir -ChildPath "test2.ps1"
+
+            $expected = "[$tempDir]"
+            $psPath = "$PSHOME\powershell"
+
+            $null = New-Item -Path $tempDir -ItemType Directory -Force
+            Set-Content -Path $test1File -Value $test1 -Force
+            Set-Content -Path $test2File -Value $test2 -Force
+        }
+
+        AfterAll {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        It "Test dot-source should evaluate '`$PSScriptRoot' for parameter default value" {
+            $result = . $test1File
+            $result | Should Be $expected
+
+            $result = . $test2File
+            $result | Should Be $expected
+        }
+
+        It "Test 'powershell -File' should evaluate '`$PSScriptRoot' for parameter default value" {
+            $result = & $psPath -NoProfile -File $test1File
+            $result | Should Be $expected
+
+            $result = & $psPath -NoProfile -File $test2File
+            $result | Should Be $expected
         }
     }
 }

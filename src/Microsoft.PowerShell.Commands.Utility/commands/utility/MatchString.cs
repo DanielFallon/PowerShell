@@ -13,11 +13,6 @@ using System.Management.Automation.Internal;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 
-#if CORECLR
-// Use stub for ICloneable
-using Microsoft.PowerShell.CoreClr.Stubs;
-#endif
-
 namespace Microsoft.PowerShell.Commands
 {
     /// <summary>
@@ -1352,6 +1347,11 @@ namespace Microsoft.PowerShell.Commands
             {
                 foreach (string filename in expandedPaths)
                 {
+                    if (Directory.Exists(filename))
+                    {
+                        continue;
+                    }
+
                     bool foundMatch = ProcessFile(filename);
                     if (_quiet && foundMatch)
                         return;

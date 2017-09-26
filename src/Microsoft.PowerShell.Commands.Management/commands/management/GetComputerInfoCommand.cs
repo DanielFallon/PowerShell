@@ -2,6 +2,8 @@
 Copyright (c) Microsoft Corporation.  All rights reserved.
 --********************************************************************/
 
+#if !UNIX
+
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -434,8 +436,14 @@ namespace Microsoft.PowerShell.Commands
                 var wmiGuard = session.GetFirst<WmiDeviceGuard>(CIMHelper.DeviceGuardNamespace,
                                                                 CIMHelper.ClassNames.DeviceGuard);
 
-                if (wmiGuard != null)
+                if (wmiGuard != null) {
+                    var smartStatus = EnumConverter<DeviceGuardSmartStatus>.Convert((int?)wmiGuard.VirtualizationBasedSecurityStatus ?? 0);
+                    if (smartStatus != null)
+                    {
+                        status = (DeviceGuardSmartStatus)smartStatus;
+                    }
                     guard = wmiGuard.AsOutputType;
+                }
             }
 
             return new DeviceGuardInfo
@@ -557,15 +565,11 @@ namespace Microsoft.PowerShell.Commands
 
             // get secure-boot info
             //TODO: Local machine only? Check for that?
-            FirmwareType fwType = FirmwareType.Unknown;
-            if (Native.GetFirmwareType(ref fwType))
-                rv.firmwareType = fwType;
+            rv.firmwareType = GetFirmwareType();
 
             // get amount of memory physically installed
             //TODO: Local machine only. Check for that?
-            UInt64 memory;
-            if (Native.GetPhysicallyInstalledSystemMemory(out memory))
-                rv.physicallyInstalledMemory = memory;
+            rv.physicallyInstalledMemory = GetPhysicallyInstalledSystemMemory();
 
 
             // get time zone
@@ -603,6 +607,54 @@ namespace Microsoft.PowerShell.Commands
             rv.deviceGuard = GetDeviceGuard(session);
 
             return rv;
+        }
+
+        /// <summary>
+        /// Wrapper around the native GetFirmwareType function.
+        /// </summary>
+        /// <returns>
+        /// null if unsuccessful, otherwise FirmwareType enum specifying
+        /// the firmware type.
+        /// </returns>
+        private static Nullable<FirmwareType> GetFirmwareType()
+        {
+            try
+            {
+                FirmwareType firmwareType;
+
+                if (Native.GetFirmwareType(out firmwareType))
+                    return firmwareType;
+            }
+            catch (Exception)
+            {
+                // Probably failed to load the DLL or to file the function entry point.
+                // Fail silently
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Wrapper around the native GetPhysicallyInstalledSystemMemory function.
+        /// </summary>
+        /// <returns>
+        /// null if unsuccessful, otherwise the amount of physically installed memory.
+        /// </returns>
+        private static Nullable<UInt64> GetPhysicallyInstalledSystemMemory()
+        {
+            try
+            {
+                UInt64 memory;
+                if (Native.GetPhysicallyInstalledSystemMemory(out memory))
+                    return memory;
+            }
+            catch (Exception)
+            {
+                // Probably failed to load the DLL or to file the function entry point.
+                // Fail silently
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -743,7 +795,7 @@ namespace Microsoft.PowerShell.Commands
                 output.BiosOtherTargetOS = bios.OtherTargetOS;
                 output.BiosPrimaryBIOS = bios.PrimaryBIOS;
                 output.BiosReleaseDate = bios.ReleaseDate;
-                output.BiosSeralNumber = bios.SerialNumber;
+                output.BiosSerialNumber = bios.SerialNumber;
                 output.BiosSMBIOSBIOSVersion = bios.SMBIOSBIOSVersion;
                 output.BiosSMBIOSMajorVersion = bios.SMBIOSMajorVersion;
                 output.BiosSMBIOSMinorVersion = bios.SMBIOSMinorVersion;
@@ -1058,11 +1110,19 @@ namespace Microsoft.PowerShell.Commands
             // that accepts an integer LocalID (LCID) value, so we'll PInvoke native code
             // to get a locale name from an LCID value
 
-            var sbName = new System.Text.StringBuilder(Native.LOCALE_NAME_MAX_LENGTH);
-            var len = Native.LCIDToLocaleName(localeID, sbName, sbName.Capacity, 0);
+            try
+            {
+                var sbName = new System.Text.StringBuilder(Native.LOCALE_NAME_MAX_LENGTH);
+                var len = Native.LCIDToLocaleName(localeID, sbName, sbName.Capacity, 0);
 
-            if (len > 0 && sbName.Length > 0)
-                return sbName.ToString();
+                if (len > 0 && sbName.Length > 0)
+                    return sbName.ToString();
+            }
+            catch (Exception)
+            {
+                // Probably failed to load the DLL or to file the function entry point.
+                // Fail silently
+            }
 
             return null;
         }
@@ -2363,7 +2423,7 @@ namespace Microsoft.PowerShell.Commands
         /// <summary>
         /// Assigned serial number of the BIOS
         /// </summary>
-        public string BiosSeralNumber { get; internal set; }
+        public string BiosSerialNumber { get; internal set; }
 
         /// <summary>
         /// BIOS version as reported by SMBIOS
@@ -3204,7 +3264,7 @@ namespace Microsoft.PowerShell.Commands
 
         /// <summary>
         /// If a HyperVisor is not present, indicates the state of the
-        /// requirement that the processor supports  Intel or AMD Virtual
+        /// requirement that the processor supports Intel or AMD Virtual
         /// Machine Monitor extensions
         /// </summary>
         public bool? HyperVRequirementVMMonitorModeExtensions { get; internal set; }
@@ -5047,17 +5107,10 @@ namespace Microsoft.PowerShell.Commands
     {
         private static class PInvokeDllNames
         {
-#if CORECLR
             public const string GetPhysicallyInstalledSystemMemoryDllName = "api-ms-win-core-sysinfo-l1-2-1.dll";
             public const string LCIDToLocaleNameDllName = "kernelbase.dll";
             public const string PowerDeterminePlatformRoleExDllName = "api-ms-win-power-base-l1-1-0.dll";
             public const string GetFirmwareTypeDllName = "api-ms-win-core-kernel32-legacy-l1-1-1";
-#else
-            public const string GetPhysicallyInstalledSystemMemoryDllName = "kernel32.dll";
-            public const string LCIDToLocaleNameDllName = "kernel32.dll";
-            public const string PowerDeterminePlatformRoleExDllName = "Powrprof.dll";
-            public const string GetFirmwareTypeDllName = "kernel32.dll";
-#endif
         }
 
         public const int LOCALE_NAME_MAX_LENGTH = 85;
@@ -5094,7 +5147,7 @@ namespace Microsoft.PowerShell.Commands
         /// <returns></returns>
         [DllImport(PInvokeDllNames.GetFirmwareTypeDllName, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool GetFirmwareType(ref FirmwareType firmwareType);
+        public static extern bool GetFirmwareType(out FirmwareType firmwareType);
 
         /// <summary>
         /// Convert a Local Identifier to a Locale name
@@ -5127,3 +5180,5 @@ namespace Microsoft.PowerShell.Commands
     }
     #endregion Native
 }
+
+#endif

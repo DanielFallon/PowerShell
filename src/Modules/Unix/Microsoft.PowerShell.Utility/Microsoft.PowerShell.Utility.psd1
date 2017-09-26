@@ -17,13 +17,13 @@ CmdletsToExport= "Format-List", "Format-Custom", "Format-Table", "Format-Wide",
     "Start-Sleep", "Tee-Object", "Measure-Command", "Update-TypeData", "Update-FormatData",
     "Remove-TypeData", "Get-TypeData", "Write-Host", "Write-Progress", "New-Object", "Select-Object",
     "Group-Object", "Sort-Object", "Get-Variable", "New-Variable", "Set-Variable", "Remove-Variable",
-    "Clear-Variable", "Export-Clixml", "Import-Clixml", "ConvertTo-Xml", "Select-Xml", "Write-Debug",
+    "Clear-Variable", "Export-Clixml", "Import-Clixml", "Import-PowerShellDataFile", "ConvertTo-Xml", "Select-Xml", "Write-Debug",
     "Write-Verbose", "Write-Warning", "Write-Error", "Write-Information", "Write-Output", "Set-PSBreakpoint",
     "Get-PSBreakpoint", "Remove-PSBreakpoint", "Enable-PSBreakpoint", "Disable-PSBreakpoint", "Get-PSCallStack",
-    "Get-TraceSource", "Set-TraceSource", "Trace-Command", "Get-FileHash",
+    "Send-MailMessage", "Get-TraceSource", "Set-TraceSource", "Trace-Command", "Get-FileHash",
     "Get-Runspace", "Debug-Runspace", "Enable-RunspaceDebug", "Disable-RunspaceDebug",
-    "Get-RunspaceDebug", "Wait-Debugger" , "Get-Uptime", "New-TemporaryFile", "Get-Verb"
-FunctionsToExport= "Format-Hex", "Import-PowerShellDataFile"
+    "Get-RunspaceDebug", "Wait-Debugger" , "Get-Uptime", "New-TemporaryFile", "Get-Verb", "Format-Hex"
+FunctionsToExport= "Import-PowerShellDataFile"
 AliasesToExport= "fhx"
 NestedModules="Microsoft.PowerShell.Commands.Utility.dll","Microsoft.PowerShell.Utility.psm1"
 HelpInfoURI = 'https://go.microsoft.com/fwlink/?linkid=390787'

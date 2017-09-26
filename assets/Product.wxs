@@ -10,14 +10,16 @@
   <?define ProductName = "$(env.ProductName)" ?>
   <?define ProductGuid = "$(env.ProductGuid)" ?>
   <?define ProductVersion = "$(env.ProductVersion)" ?>
+  <?define ProductSemanticVersion = "$(env.ProductSemanticVersion)" ?>
   <?define ProductVersionWithName = "$(var.ProductName)_$(var.ProductVersion)"?>
+  <?define ProductSemanticVersionWithName = "$(var.ProductName)-$(env.ProductSemanticVersion)"?>
   <?define ProductTargetArchitecture = "$(env.ProductTargetArchitecture)"?>
   <?define ProductProgFilesDir = "$(env.ProductProgFilesDir)" ?>
 
   <!-- Generate Your Own GUID for both ID and UpgradeCode attributes. -->
   <!-- Note:  UpgradeCode GUID MUST REMAIN SAME THROUGHOUT ALL VERSIONS -->
   <!-- Otherwise, updates won't occur -->
-  <Product Id="$(var.ProductGuid)" Name="$(var.ProductVersionWithName)" Language="1033" Version="$(var.ProductVersion)" Manufacturer="Microsoft Corporation" UpgradeCode="{f7ba3e58-0be8-443b-ac91-f99dd1e7bd3b}">
+  <Product Id="$(var.ProductGuid)" Name="$(var.ProductSemanticVersionWithName)" Language="1033" Version="$(var.ProductVersion)" Manufacturer="Microsoft Corporation" UpgradeCode="{f7ba3e58-0be8-443b-ac91-f99dd1e7bd3b}">
     <!-- Properties About The Package -->
     <Package Id="*" Keywords="Installer" Platform="$(var.ProductTargetArchitecture)" InstallerVersion="200" Compressed="yes" InstallScope="perMachine" Description="PowerShell package" Comments="PowerShell for every system" />
 
@@ -29,12 +31,19 @@
 
     <!-- Set properties for add/remove programs -->
     <Property Id="ARPHELPLINK" Value="$(var.InfoURL)" />
+
+	<!-- Checkbox to allow starting PowerShell after the installation (in UI mode only) -->
+	<Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open $(env.ProductName)" />
+	<!-- Default value of Checkbox of starting PowerShell after installation -->  
+	<Property Id="WixShellExecTarget" Value="[$(var.ProductVersionWithName)]PowerShell.exe"/>
+	<CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
+	<UI><Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish></UI>
     
     <!-- Prerequisites -->
     <Condition Message="Supported only on Win8 and above"><![CDATA[ Installed OR $(var.MinOSVersionSupported) ]]></Condition>
 
     <!-- Information About When Older Versions Are Trying To Be Installed-->
-    <MajorUpgrade DowngradeErrorMessage="A newer version of PowerShell is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of $(env.ProductName) is already installed." />
     
     <!-- Embed Cabinet Files in Product-->
     <MediaTemplate EmbedCab="yes" />
@@ -52,10 +61,32 @@
     <!--We need to show EULA, and provide option to customize download location-->        
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
+    <!-- Prerequisite check for Windows Universal C runtime -->
+    <Property Id="UNIVERSAL_C_RUNTIME_INSTALLED" Secure="yes">
+      <DirectorySearch Id="WindowsDirectory" Path="[WindowsFolder]">
+        <DirectorySearch Id="System32" Path="System32">
+          <FileSearch Id="ucrtbase" Name="ucrtbase.dll"/>
+        </DirectorySearch>
+      </DirectorySearch>
+    </Property>	
+    <Condition Message="$(env.ProductName) requires the Universal C Runtime to be installed. You can find a download link to it here: https://github.com/PowerShell/PowerShell/blob/master/docs/installation/windows.md#prerequisites">
+      <![CDATA[Installed OR UNIVERSAL_C_RUNTIME_INSTALLED]]>
+    </Condition>
+
+     <!-- Prerequisite check for Visual Studio 2015 C++ redistributables -->
+     <Property Id="VISUAL_CPP_RUNTIME_INSTALLED" Secure="yes">
+      <DirectorySearchRef Id="System32" Parent="WindowsDirectory" Path="System32">
+        <FileSearch Id="vcruntime140" Name="vcruntime140.dll"/>
+      </DirectorySearchRef>
+    </Property>	
+    <Condition Message="$(env.ProductName) requires the Visual Studio 2015 C++ redistributables to be installed. You can find a download link to it here: https://github.com/PowerShell/PowerShell/blob/master/docs/installation/windows.md#prerequisites">
+      <![CDATA[Installed OR VISUAL_CPP_RUNTIME_INSTALLED]]>
+    </Condition>
+
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="$(var.ProductProgFilesDir)">
         <Directory Id="INSTALLFOLDER" Name="PowerShell">
-          <Directory Id="$(var.ProductVersionWithName)" Name="$(var.ProductVersion)">
+          <Directory Id="$(var.ProductVersionWithName)" Name="$(var.ProductSemanticVersion)">
             <Component Id="ProductVersionFolder" Guid="{e1a7f05e-0cd6-4227-80a8-e4fb311f045c}">
               <CreateFolder/>
             </Component>
@@ -63,11 +94,11 @@
         </Directory>        
       </Directory>
       <Directory Id="ProgramMenuFolder">
-        <Directory Id="ApplicationProgramsFolder" Name="$(var.ProductVersionWithName)">
+        <Directory Id="ApplicationProgramsFolder" Name="$(var.ProductSemanticVersionWithName)">
           <Component Id="ApplicationProgramsMenuShortcut" Guid="{A77507A7-F970-4618-AC30-20AFE36EE2EB}">
             <Shortcut Id="PowerShell_ProgramsMenuShortcut"
-              Name="$(var.ProductVersionWithName)"
-              Description="$(var.ProductVersionWithName)"
+              Name="$(var.ProductSemanticVersionWithName)"
+              Description="$(var.ProductSemanticVersionWithName)"
               Target="[$(var.ProductVersionWithName)]PowerShell.exe"
               WorkingDirectory="$(var.ProductVersionWithName)"
               Icon = "PowerShellExe.ico" />
@@ -75,7 +106,7 @@
             <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
 
             <RegistryValue Root="HKCU"
-                           Key="Software\Microsoft\$(var.ProductVersionWithName)\ProgramsMenuShortcut"
+                           Key="Software\Microsoft\$(var.ProductSemanticVersionWithName)\ProgramsMenuShortcut"
                            Name="installed"
                            Type="integer"
                            Value="1" KeyPath="yes"/>

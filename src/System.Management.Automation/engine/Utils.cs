@@ -20,10 +20,11 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Text;
-using System.Security.Principal;
 
 using TypeTable = System.Management.Automation.Runspaces.TypeTable;
-using PSUtils = System.Management.Automation.PsUtils;
+
+using System.Diagnostics;
+using Microsoft.Win32.SafeHandles;
 
 namespace System.Management.Automation
 {
@@ -169,7 +170,7 @@ namespace System.Management.Automation
 
             try
             {
-                p = ClrFacade.SecureStringToCoTaskMemUnicode(ss);
+                p = Marshal.SecureStringToCoTaskMemUnicode(ss);
                 s = Marshal.PtrToStringUni(p);
             }
             finally
@@ -232,55 +233,13 @@ namespace System.Management.Automation
         }
 #endif
 
-        /// <summary>
-        /// Gets the application base for current monad version
-        /// </summary>
-        /// <returns>
-        /// applicationbase path for current monad version installation
-        /// </returns>
-        /// <exception cref="SecurityException">
-        /// if caller doesn't have permission to read the key
-        /// </exception>
+        internal static string DefaultPowerShellAppBase { get; } = GetApplicationBase(DefaultPowerShellShellID);
+
         internal static string GetApplicationBase(string shellId)
         {
-#if CORECLR
-            // Use the location of SMA.dll as the application base
-            // Assembly.GetEntryAssembly and GAC are not in CoreCLR.
+            // Use the location of SMA.dll as the application base.
             Assembly assembly = typeof(PSObject).GetTypeInfo().Assembly;
             return Path.GetDirectoryName(assembly.Location);
-#else
-            // This code path applies to Windows FullCLR inbox deployments. All CoreCLR
-            // implementations should use the location of SMA.dll since it must reside in PSHOME.
-            //
-            // try to get the path from the registry first
-            string result = GetApplicationBaseFromRegistry(shellId);
-            if (result != null)
-            {
-                return result;
-            }
-
-            // The default keys aren't installed, so try and use the entry assembly to
-            // get the application base. This works for managed apps like minishells...
-            Assembly assem = Assembly.GetEntryAssembly();
-            if (assem != null)
-            {
-                // For minishells, we just return the executable path.
-                return Path.GetDirectoryName(assem.Location);
-            }
-
-            // For unmanaged host apps, look for the SMA dll, if it's not GAC'ed then
-            // use it's location as the application base...
-            assem = typeof(PSObject).GetTypeInfo().Assembly;
-            string gacRootPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Microsoft.Net\\assembly");
-            if (!assem.Location.StartsWith(gacRootPath, StringComparison.OrdinalIgnoreCase))
-            {
-                // For other hosts.
-                return Path.GetDirectoryName(assem.Location);
-            }
-
-            // otherwise, just give up...
-            return "";
-#endif
         }
 
         private static string[] s_productFolderDirectories;
@@ -306,12 +265,12 @@ namespace System.Management.Automation
                 List<string> baseDirectories = new List<string>();
 
                 // Retrieve the application base from the registry
-                string appBase = GetApplicationBase(DefaultPowerShellShellID);
+                string appBase = Utils.DefaultPowerShellAppBase;
                 if (!string.IsNullOrEmpty(appBase))
                 {
                     baseDirectories.Add(appBase);
                 }
-
+#if !UNIX
                 // Win8: 454976
                 // Now add the two variations of System32
                 baseDirectories.Add(Environment.GetFolderPath(Environment.SpecialFolder.System));
@@ -320,17 +279,13 @@ namespace System.Management.Automation
                 {
                     baseDirectories.Add(systemX86);
                 }
-
+#endif
                 // And built-in modules
                 string progFileDir;
                 // TODO: #1184 will resolve this work-around
                 // Side-by-side versions of PowerShell use modules from their application base, not
                 // the system installation path.
-#if CORECLR
                 progFileDir = Path.Combine(appBase, "Modules");
-#else
-                progFileDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsPowerShell", "Modules");
-#endif
 
                 if (!string.IsNullOrEmpty(progFileDir))
                 {
@@ -338,9 +293,6 @@ namespace System.Management.Automation
                     baseDirectories.Add(Path.Combine(progFileDir, "PowerShellGet"));
                     baseDirectories.Add(Path.Combine(progFileDir, "Pester"));
                     baseDirectories.Add(Path.Combine(progFileDir, "PSReadLine"));
-#if CORECLR
-                    baseDirectories.Add(Path.Combine(progFileDir, "Json.Net"));
-#endif // CORECLR
                 }
                 Interlocked.CompareExchange(ref s_productFolderDirectories, baseDirectories.ToArray(), null);
             }
@@ -378,7 +330,7 @@ namespace System.Management.Automation
         /// </summary>
         internal static bool IsRunningFromSysWOW64()
         {
-            return Utils.GetApplicationBase(Utils.DefaultPowerShellShellID).Contains("SysWOW64");
+            return DefaultPowerShellAppBase.Contains("SysWOW64");
         }
 
         /// <summary>
@@ -527,64 +479,6 @@ namespace System.Management.Automation
             return AllowedEditionValues.Contains(editionValue, StringComparer.OrdinalIgnoreCase);
         }
 
-#if !CORECLR
-        /// <summary>
-        /// Checks whether current monad session supports NetFrameworkVersion specified
-        /// by checkVersion. The specified version is treated as the the minimum required
-        /// version of .NET framework.
-        /// </summary>
-        /// <param name="checkVersion">Version to check</param>
-        /// <param name="higherThanKnownHighestVersion">true if version to check is higher than the known highest version</param>
-        /// <returns>true if supported, false otherwise</returns>
-        internal static bool IsNetFrameworkVersionSupported(Version checkVersion, out bool higherThanKnownHighestVersion)
-        {
-            higherThanKnownHighestVersion = false;
-            bool isSupported = false;
-
-            if (checkVersion == null)
-            {
-                return false;
-            }
-
-            // Construct a temporary version number with build number and revision number set to 0.
-            // This is done so as to re-use the version specifications in PSUtils.FrameworkRegistryInstallation
-            Version tempVersion = new Version(checkVersion.Major, checkVersion.Minor, 0, 0);
-
-            // Win8: 840038 - For any version above the highest known .NET version (4.5 for Windows 8), we can't make a call as to
-            // whether the requirement is satisfied or not because we can't detect that version of .NET.
-            // We end up erring on the side of app compat by letting it through.
-            // We will write a message in the Verbose output saying that we cannot detect the specified version of the .NET Framework.
-            if (checkVersion > PsUtils.FrameworkRegistryInstallation.KnownHighestNetFrameworkVersion)
-            {
-                isSupported = true;
-                higherThanKnownHighestVersion = true;
-            }
-            // For a script to have a valid .NET version, the specified version or atleast one of its compatible versions must be installed on the machine.
-            else if (PSUtils.FrameworkRegistryInstallation.CompatibleNetFrameworkVersions.ContainsKey(tempVersion))
-            {
-                if (PSUtils.FrameworkRegistryInstallation.IsFrameworkInstalled(tempVersion.Major, tempVersion.Minor, 0))
-                {
-                    // If the specified version is installed on the machine, then we return true.
-                    isSupported = true;
-                }
-                else
-                {
-                    // If any of the compatible versions are installed on the machine, then we return true.
-                    HashSet<Version> compatibleVersions = PSUtils.FrameworkRegistryInstallation.CompatibleNetFrameworkVersions[tempVersion];
-                    foreach (Version compatibleVersion in compatibleVersions)
-                    {
-                        if (PSUtils.FrameworkRegistryInstallation.IsFrameworkInstalled(compatibleVersion.Major, compatibleVersion.Minor, 0))
-                        {
-                            isSupported = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            return isSupported;
-        }
-#endif
         #endregion
 
         /// <summary>
@@ -595,11 +489,7 @@ namespace System.Management.Automation
         /// <summary>
         /// This is used to construct the profile path.
         /// </summary>
-#if CORECLR
         internal static string ProductNameForDirectory = Platform.IsInbox ? "WindowsPowerShell" : "PowerShell";
-#else
-        internal const string ProductNameForDirectory = "WindowsPowerShell";
-#endif
 
         /// <summary>
         /// The subdirectory of module paths
@@ -731,47 +621,6 @@ namespace System.Management.Automation
         /// Scheduled job module name.
         /// </summary>
         internal const string ScheduledJobModuleName = "PSScheduledJob";
-
-        internal const string WorkflowType = "Microsoft.PowerShell.Workflow.AstToWorkflowConverter, Microsoft.PowerShell.Activities, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35";
-        internal const string WorkflowModule = "PSWorkflow";
-
-        internal static IAstToWorkflowConverter GetAstToWorkflowConverterAndEnsureWorkflowModuleLoaded(ExecutionContext context)
-        {
-            IAstToWorkflowConverter converterInstance = null;
-            Type converterType = null;
-
-            if (Utils.IsRunningFromSysWOW64())
-            {
-                throw new NotSupportedException(AutomationExceptions.WorkflowDoesNotSupportWOW64);
-            }
-
-            // If the current language mode is ConstrainedLanguage but the system lockdown mode is not,
-            // then also block the conversion - since we can't validate the InlineScript, PowerShellValue,
-            // etc.
-            if ((context != null) &&
-                (context.LanguageMode == PSLanguageMode.ConstrainedLanguage) &&
-                (SystemPolicy.GetSystemLockdownPolicy() != SystemEnforcementMode.Enforce))
-            {
-                throw new NotSupportedException(Modules.CannotDefineWorkflowInconsistentLanguageMode);
-            }
-
-            EnsureModuleLoaded(WorkflowModule, context);
-
-            converterType = Type.GetType(WorkflowType);
-
-            if (converterType != null)
-            {
-                converterInstance = (IAstToWorkflowConverter)converterType.GetConstructor(PSTypeExtensions.EmptyTypes).Invoke(EmptyArray<object>());
-            }
-
-            if (converterInstance == null)
-            {
-                string error = StringUtil.Format(AutomationExceptions.CantLoadWorkflowType, Utils.WorkflowType, Utils.WorkflowModule);
-                throw new NotSupportedException(error);
-            }
-
-            return converterInstance;
-        }
 
         internal static void EnsureModuleLoaded(string module, ExecutionContext context)
         {
@@ -1110,6 +959,7 @@ namespace System.Management.Automation
 
         internal static bool IsReservedDeviceName(string destinationPath)
         {
+#if !UNIX
             string[] reservedDeviceNames = { "CON", "PRN", "AUX", "CLOCK$", "NUL",
                                              "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
                                              "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
@@ -1133,7 +983,7 @@ namespace System.Management.Automation
                     return true;
                 }
             }
-
+#endif
             return false;
         }
 
@@ -1149,8 +999,22 @@ namespace System.Management.Automation
 
         internal class NativeMethods
         {
-            [DllImport(PinvokeDllNames.GetFileAttributesDllName, CharSet = CharSet.Unicode, SetLastError = true)]
-            internal static extern int GetFileAttributes(string lpFileName);
+            private static string EnsureLongPathPrefixIfNeeded(string path)
+            {
+                if (path.Length >= MAX_PATH && !path.StartsWith(@"\\?\", StringComparison.Ordinal))
+                    return @"\\?\" + path;
+
+                return path;
+            }
+
+            [DllImport(PinvokeDllNames.GetFileAttributesDllName, EntryPoint = "GetFileAttributesW", CharSet = CharSet.Unicode, SetLastError = true)]
+            private static extern int GetFileAttributesPrivate(string lpFileName);
+
+            internal static int GetFileAttributes(string fileName)
+            {
+                fileName = EnsureLongPathPrefixIfNeeded(fileName);
+                return GetFileAttributesPrivate(fileName);
+            }
 
             [Flags]
             internal enum FileAttributes
@@ -1202,24 +1066,12 @@ namespace System.Management.Automation
         internal static readonly HashSet<string> PowerShellAssemblies =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    "microsoft.powershell.activities",
                     "microsoft.powershell.commands.diagnostics",
                     "microsoft.powershell.commands.management",
                     "microsoft.powershell.commands.utility",
                     "microsoft.powershell.consolehost",
-                    "microsoft.powershell.core.activities",
-                    "microsoft.powershell.diagnostics.activities",
-                    "microsoft.powershell.editor",
-                    "microsoft.powershell.gpowershell",
-                    "microsoft.powershell.graphicalhost",
-                    "microsoft.powershell.isecommon",
-                    "microsoft.powershell.management.activities",
                     "microsoft.powershell.scheduledjob",
-                    "microsoft.powershell.security.activities",
                     "microsoft.powershell.security",
-                    "microsoft.powershell.utility.activities",
-                    "microsoft.powershell.workflow.servicecore",
-                    "microsoft.wsman.management.activities",
                     "microsoft.wsman.management",
                     "microsoft.wsman.runtime",
                     "system.management.automation"
@@ -1366,40 +1218,41 @@ namespace System.Management.Automation
 
         internal static Encoding GetEncodingFromEnum(FileSystemCmdletProviderEncoding encoding)
         {
-            System.Text.Encoding result = System.Text.Encoding.Unicode;
+            // Default to unicode encoding
+            Encoding result = Encoding.Unicode;
 
             switch (encoding)
             {
                 case FileSystemCmdletProviderEncoding.String:
-                    result = new UnicodeEncoding();
+                    result = Encoding.Unicode;
                     break;
 
                 case FileSystemCmdletProviderEncoding.Unicode:
-                    result = new UnicodeEncoding();
+                    result = Encoding.Unicode;
                     break;
 
                 case FileSystemCmdletProviderEncoding.BigEndianUnicode:
-                    result = new UnicodeEncoding(true, false);
+                    result = Encoding.BigEndianUnicode;
                     break;
 
                 case FileSystemCmdletProviderEncoding.UTF8:
-                    result = new UTF8Encoding();
+                    result = Encoding.UTF8;
                     break;
 
                 case FileSystemCmdletProviderEncoding.UTF7:
-                    result = new UTF7Encoding();
+                    result = Encoding.UTF7;
                     break;
 
                 case FileSystemCmdletProviderEncoding.UTF32:
-                    result = new UTF32Encoding();
+                    result = Encoding.UTF32;
                     break;
 
                 case FileSystemCmdletProviderEncoding.BigEndianUTF32:
-                    result = new UTF32Encoding(true, false);
+                    result = Encoding.BigEndianUnicode;
                     break;
 
                 case FileSystemCmdletProviderEncoding.Ascii:
-                    result = new ASCIIEncoding();
+                    result = Encoding.ASCII;
                     break;
 
                 case FileSystemCmdletProviderEncoding.Default:
@@ -1411,15 +1264,13 @@ namespace System.Management.Automation
                     break;
 
                 default:
-                    // Default to unicode encoding
-                    result = new UnicodeEncoding();
                     break;
             }
 
             return result;
         } // GetEncodingFromEnum
 
-        // [System.Text.Encoding]::GetEncodings() | ? { $_.GetEncoding().GetPreamble() } |
+        // [System.Text.Encoding]::GetEncodings() | Where-Object { $_.GetEncoding().GetPreamble() } |
         //     Add-Member ScriptProperty Preamble { $this.GetEncoding().GetPreamble() -join "-" } -PassThru |
         //     Format-Table -Auto
         internal static Dictionary<String, FileSystemCmdletProviderEncoding> encodingMap =
@@ -1438,7 +1289,10 @@ namespace System.Management.Automation
             (char) 21, (char) 22, (char) 23, (char) 24, (char) 25, (char) 26, (char) 28, (char) 29, (char) 30,
             (char) 31, (char) 127, (char) 129, (char) 141, (char) 143, (char) 144, (char) 157 };
 
-#if !CORECLR // TODO:CORECLR - WindowsIdentity.Impersonate() is not available. Use WindowsIdentity.RunImplemented to replace it.
+        internal static readonly UTF8Encoding utf8NoBom =
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+#if !CORECLR // TODO:CORECLR - WindowsIdentity.Impersonate() is not available. Use WindowsIdentity.RunImpersonated to replace it.
         /// <summary>
         /// Queues a CLR worker thread with impersonation of provided Windows identity.
         /// </summary>
@@ -1557,6 +1411,46 @@ namespace System.Management.Automation
             // Trim trailing white spaces, tabs etc but don't be aggressive in removing everything that has UnicodeCategory of trailing space.
             // String.WhitespaceChars will trim aggressively than what the underlying FS does (for ex, NTFS, FAT).
             internal static readonly char[] PathSearchTrimEnd = { (char)0x9, (char)0xA, (char)0xB, (char)0xC, (char)0xD, (char)0x20, (char)0x85, (char)0xA0 };
+        }
+
+#if !UNIX
+        // This is to reduce the runtime overhead of the feature query
+        private static readonly Type ComObjectType = typeof(object).Assembly.GetType("System.__ComObject");
+#endif
+
+        internal static bool IsComObject(PSObject psObject)
+        {
+#if UNIX
+            return false;
+#else
+            if (psObject == null) { return false; }
+
+            object obj = PSObject.Base(psObject);
+            return IsComObject(obj);
+#endif
+        }
+
+        internal static bool IsComObject(object obj)
+        {
+#if UNIX
+            return false;
+#else
+            // We can't use System.Runtime.InteropServices.Marshal.IsComObject(obj) since it doesn't work in partial trust.
+            //
+            // There could be strongly typed RWCs whose type is not 'System.__ComObject', but the more specific type should
+            // derive from 'System.__ComObject'. The strongly typed RWCs can be created with 'new' operation via the Primay
+            // Interop Assembly (PIA).
+            // For example, with the PIA 'Microsoft.Office.Interop.Excel', you can write the following code:
+            //    var excelApp = new Microsoft.Office.Interop.Excel.Application();
+            //    Type type = excelApp.GetType();
+            //    Type comObjectType = typeof(object).Assembly.GetType("System.__ComObject");
+            //    Console.WriteLine("excelApp type: {0}", type.FullName);
+            //    Console.WriteLine("Is __ComObject assignable from? {0}", comObjectType.IsAssignableFrom(type));
+            // and the results are:
+            //    excelApp type: Microsoft.Office.Interop.Excel.ApplicationClass
+            //    Is __ComObject assignable from? True
+            return obj != null && ComObjectType.IsAssignableFrom(obj.GetType());
+#endif
         }
     }
 }

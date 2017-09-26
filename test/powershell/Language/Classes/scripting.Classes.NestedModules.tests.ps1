@@ -1,7 +1,5 @@
 Describe 'NestedModules' -Tags "CI" {
 
-    Import-Module $PSScriptRoot\..\LanguageTestSupport.psm1
-
     function New-TestModule {
         param(
             [string]$Name,
@@ -20,7 +18,7 @@ Describe 'NestedModules' -Tags "CI" {
         }
 
         if ($NestedContents) {
-            $manifestParams['NestedModules'] = 1..$NestedContents.Count | % {
+            $manifestParams['NestedModules'] = 1..$NestedContents.Count | ForEach-Object {
                 $null = new-item -type directory TestDrive:\$Name\Nested$_
                 $null = Set-Content -Path "${TestDrive}\$Name\Nested$_\Nested$_.psm1" -Value $NestedContents[$_ - 1]
                 "Nested$_"
@@ -30,12 +28,12 @@ Describe 'NestedModules' -Tags "CI" {
         New-ModuleManifest @manifestParams
 
         $resolvedTestDrivePath = Split-Path ((get-childitem TestDrive:\)[0].FullName)
-        if (-not ($env:PSMODULEPATH -like "*$resolvedTestDrivePath*")) {
-            $env:PSMODULEPATH += "$([System.IO.Path]::PathSeparator)$resolvedTestDrivePath"
+        if (-not ($env:PSModulePath -like "*$resolvedTestDrivePath*")) {
+            $env:PSModulePath += "$([System.IO.Path]::PathSeparator)$resolvedTestDrivePath"
         }
     }
 
-    $originalPSMODULEPATH = $env:PSMODULEPATH
+    $originalPSModulePath = $env:PSModulePath
 
     try {
 
@@ -120,7 +118,7 @@ using module WithRoot
         }
 
     } finally {
-        $env:PSMODULEPATH = $originalPSMODULEPATH
+        $env:PSModulePath = $originalPSModulePath
         Get-Module @('ABC', 'NoRoot', 'WithRoot') | Remove-Module
     }
 }

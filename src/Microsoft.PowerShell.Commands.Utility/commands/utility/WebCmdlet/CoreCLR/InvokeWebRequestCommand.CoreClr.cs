@@ -15,10 +15,18 @@ namespace Microsoft.PowerShell.Commands
     /// The Invoke-RestMethod command
     /// This command makes an HTTP or HTTPS request to a web server and returns the results.
     /// </summary>
-    [Cmdlet(VerbsLifecycle.Invoke, "WebRequest", HelpUri = "https://go.microsoft.com/fwlink/?LinkID=217035")]
+    [Cmdlet(VerbsLifecycle.Invoke, "WebRequest", HelpUri = "https://go.microsoft.com/fwlink/?LinkID=217035", DefaultParameterSetName = "StandardMethod")]
     public class InvokeWebRequestCommand : WebRequestPSCmdlet
     {
         #region Virtual Method Overrides
+
+        /// <summary>
+        /// Default constructor for InvokeWebRequestCommand
+        /// </summary>
+        public InvokeWebRequestCommand() : base()
+        {
+            this._parseRelLink = true;
+        }
 
         /// <summary>
         /// Process the web response and output corresponding objects.
@@ -46,6 +54,7 @@ namespace Microsoft.PowerShell.Commands
                 // creating a MemoryStream wrapper to response stream here to support IsStopping.
                 responseStream = new WebResponseContentMemoryStream(responseStream, StreamHelper.ChunkSize, this);
                 WebResponseObject ro = WebResponseObjectFactory.GetResponseObject(response, responseStream, this.Context, UseBasicParsing);
+                ro.RelationLink = _relationLink;
                 WriteObject(ro);
 
                 // use the rawcontent stream from WebResponseObject for further

@@ -536,7 +536,7 @@ namespace Microsoft.PowerShell
                 // Now we check if the bottom right coordinate of our window went over the coordinate of the bottom
                 // right of the buffer.  If it did then we need to adjust the window.
 
-                // bufferInfo.BufferSize.X - 1  will give us the rightmost coordinate of the buffer.
+                // bufferInfo.BufferSize.X - 1 will give us the rightmost coordinate of the buffer.
                 // r.Right - rightCoordinateOfBuffer will give us how much we need to adjust the window left and right coordinates.
                 // Then we can do the same for top and bottom.
                 short adjustLeft = (short)(r.Right - (bufferInfo.BufferSize.X - 1));
@@ -1745,10 +1745,10 @@ namespace Microsoft.PowerShell
         /// from the keyboard device, blocking processing until a keystroke is
         /// typed that matches the specified keystroke options.
         /// </summary>
-        /// <param name="options">Unused</param>
+        /// <param name="options">Only NoEcho is supported.</param>
         public override KeyInfo ReadKey(ReadKeyOptions options)
         {
-            ConsoleKeyInfo key = Console.ReadKey();
+            ConsoleKeyInfo key = Console.ReadKey((options & ReadKeyOptions.NoEcho) != 0);
             return new KeyInfo((int)key.Key, key.KeyChar, new ControlKeyStates(), true);
         }
 
@@ -1805,14 +1805,11 @@ namespace Microsoft.PowerShell
                 //if x is exceeding buffer width, reset to the next line
                 if (origin.X >= BufferSize.Width)
                 {
-                    origin.X = 1;
+                    origin.X = 0;
                 }
 
                 //write the character from contents
                 Console.Out.Write(charitem.Character);
-
-                //advance the character one position
-                origin.X++;
             }
 
             //reset the cursor to the original position

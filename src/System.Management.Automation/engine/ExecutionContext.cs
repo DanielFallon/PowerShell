@@ -393,7 +393,6 @@ namespace System.Management.Automation
 
         internal static List<string> ModulesWithJobSourceAdapters = new List<string>
             {
-                Utils.WorkflowModule,
                 Utils.ScheduledJobModuleName,
             };
 
@@ -1375,7 +1374,7 @@ namespace System.Management.Automation
 
                 try
                 {
-                    loadedAssembly = ClrFacade.LoadFrom(filename);
+                    loadedAssembly = Assembly.LoadFrom(filename);
                     return loadedAssembly;
                 }
                 catch (FileNotFoundException fileNotFound)

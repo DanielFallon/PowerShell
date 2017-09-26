@@ -18,7 +18,7 @@ namespace Microsoft.PowerShell.Commands
     /// Intended to work against the wide spectrum of "RESTful" web services
     /// currently deployed across the web.
     /// </summary>
-    [Cmdlet(VerbsLifecycle.Invoke, "RestMethod", HelpUri = "https://go.microsoft.com/fwlink/?LinkID=217034")]
+    [Cmdlet(VerbsLifecycle.Invoke, "RestMethod", HelpUri = "https://go.microsoft.com/fwlink/?LinkID=217034", DefaultParameterSetName = "StandardMethod")]
     public partial class InvokeRestMethodCommand : WebRequestPSCmdlet
     {
         #region Virtual Method Overrides
@@ -45,13 +45,28 @@ namespace Microsoft.PowerShell.Commands
                     {
                         // determine the response type
                         RestReturnType returnType = CheckReturnType(response);
-                        // get the response encoding
-                        Encoding encoding = ContentHelper.GetEncoding(response);
+
+                        // Try to get the response encoding from the ContentType header.
+                        Encoding encoding = null;
+                        string charSet = response.Content.Headers.ContentType?.CharSet;
+                        if (!string.IsNullOrEmpty(charSet))
+                        {
+                            // NOTE: Don't use ContentHelper.GetEncoding; it returns a
+                            // default which bypasses checking for a meta charset value.
+                            StreamHelper.TryGetEncoding(charSet, out encoding);
+                        }
 
                         object obj = null;
                         Exception ex = null;
 
-                        string str = StreamHelper.DecodeStream(responseStream, encoding);
+                        string str = StreamHelper.DecodeStream(responseStream, ref encoding);
+                        // NOTE: Tests use this verbose output to verify the encoding.
+                        WriteVerbose(string.Format
+                        (
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            "Content encoding: {0}",
+                            string.IsNullOrEmpty(encoding.HeaderName) ? encoding.EncodingName : encoding.HeaderName)
+                        );
                         bool convertSuccess = false;
 
                         // On CoreCLR, we need to explicitly load Json.NET
@@ -79,6 +94,12 @@ namespace Microsoft.PowerShell.Commands
                 if (ShouldSaveToOutFile)
                 {
                     StreamHelper.SaveStreamToFile(responseStream, QualifiedOutFile, this);
+                }
+
+                if (!String.IsNullOrEmpty(ResponseHeadersVariable))
+                {
+                    PSVariableIntrinsics vi = SessionState.PSVariable;
+                    vi.Set(ResponseHeadersVariable, WebResponseHelper.GetHeadersDictionary(response));
                 }
             }
         }

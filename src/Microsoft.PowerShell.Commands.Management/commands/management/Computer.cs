@@ -18,6 +18,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Security.Cryptography;
+using System.Security.Permissions;
 using System.Text;
 using System.Threading;
 using Microsoft.Win32;
@@ -32,8 +33,6 @@ using Microsoft.PowerShell.CoreClr.Stubs;
 #else
 //TODO:CORECLR System.DirectoryServices is not available on CORE CLR
 using System.DirectoryServices;
-//TODO:CORECLR System.Security.Permission is not available on CORE CLR
-using System.Security.Permissions;
 using System.Management; // We are not porting the library to CoreCLR
 using Microsoft.WSMan.Management;
 #endif
@@ -126,6 +125,14 @@ namespace Microsoft.PowerShell.Commands
         [Alias("Size", "Bytes", "BS")]
         [ValidateRange((int)0, (int)65500)]
         public Int32 BufferSize { get; set; } = 32;
+
+        /// <summary>
+        /// The following is the definition of the input parameter "TimeOut".
+        /// Time-out value in milliseconds. If a response is not received in this time, no response is assumed. The default is 1000 milliseconds.
+        /// </summary>
+        [Parameter]
+        [ValidateRange((int)1, Int32.MaxValue)]
+        public Int32 TimeOut { get; set; } = 1000;
 
         /// <summary>
         /// The following is the definition of the input parameter "ComputerName".
@@ -399,6 +406,9 @@ namespace Microsoft.PowerShell.Commands
             FilterString.Append(" And ");
             FilterString.Append("BufferSize=");
             FilterString.Append(BufferSize);
+            FilterString.Append(" And ");
+            FilterString.Append("TimeOut=");
+            FilterString.Append(TimeOut);
             FilterString.Append(")");
             return FilterString.ToString();
         }
@@ -612,6 +622,7 @@ namespace Microsoft.PowerShell.Commands
 
                         using (CimSession cimSession = RemoteDiscoveryHelper.CreateCimSession(sourceComp, this.Credential, WsmanAuthentication, cancel.Token, this))
                         {
+                            WriteVerbose(String.Format("WMI query {0} sent to {1}", querystring, sourceComp));
                             for (int echoRequestCount = 0; echoRequestCount < Count; echoRequestCount++)
                             {
                                 IEnumerable<CimInstance> mCollection = cimSession.QueryInstances(
@@ -1349,7 +1360,7 @@ namespace Microsoft.PowerShell.Commands
             ObjectQuery objquery = new ObjectQuery();
             StringBuilder sb = new StringBuilder("select * from ");
             sb.Append(ComputerWMIHelper.WMI_Class_SystemRestore);
-            sb.Append(" where  description = '");
+            sb.Append(" where description = '");
             sb.Append(description.Replace("'", "\\'"));
             sb.Append("'");
             objquery.QueryString = sb.ToString();
@@ -1499,7 +1510,7 @@ namespace Microsoft.PowerShell.Commands
                         //  sequenceList = new List<int>();
                         StringBuilder sb = new StringBuilder("select * from ");
                         sb.Append(ComputerWMIHelper.WMI_Class_SystemRestore);
-                        sb.Append(" where  SequenceNumber = ");
+                        sb.Append(" where SequenceNumber = ");
                         for (int i = 0; i <= RestorePoint.Length - 1; i++)
                         {
                             sb.Append(RestorePoint[i]);
@@ -1722,7 +1733,7 @@ namespace Microsoft.PowerShell.Commands
     }
 
     /// <summary>
-    /// Restarts  the computer
+    /// Restarts the computer
     /// </summary>
     [Cmdlet(VerbsLifecycle.Restart, "Computer", SupportsShouldProcess = true, DefaultParameterSetName = DefaultParameterSet,
         HelpUri = "https://go.microsoft.com/fwlink/?LinkID=135253", RemotingCapability = RemotingCapability.OwnedByCommand)]
@@ -1956,7 +1967,7 @@ $result = @{}
 foreach ($computerName in $array[1])
 {
     $ret = $null
-    if ($array[0] -eq $null)
+    if ($null -eq array[0])
     {
         $ret = Invoke-Command -ComputerName $computerName {$true} -SessionOption (New-PSSessionOption -NoMachineProfile) -ErrorAction SilentlyContinue
     }

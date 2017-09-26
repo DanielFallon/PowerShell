@@ -19,11 +19,6 @@ using System.Management.Automation.Runspaces;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 
-#if CORECLR
-// Use stubs for Serializable attribute and SerializationInfo
-using Microsoft.PowerShell.CoreClr.Stubs;
-#endif
-
 namespace System.Management.Automation
 {
     /// <summary>
@@ -1345,7 +1340,7 @@ namespace System.Management.Automation
         /// <param name="scriptThis"></param>
         /// <param name="outputPipe">The output pipe which has the results of the invocation
         /// </param>
-        /// <param name="invocationInfo">The information about  current state of the runspace.</param>
+        /// <param name="invocationInfo">The information about current state of the runspace.</param>
         /// <param name="args">The arguments to this script.</param>
         /// <exception cref="ArgumentNullException">scriptBlock is null
         /// </exception>

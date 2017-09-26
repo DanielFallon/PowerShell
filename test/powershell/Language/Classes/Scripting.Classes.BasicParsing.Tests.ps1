@@ -1,7 +1,24 @@
 #
 # Copyright (c) Microsoft Corporation, 2014
 #
-Import-Module $PSScriptRoot\..\LanguageTestSupport.psm1
+
+try {
+#
+# CrossGen'ed assemblies cause a hang to happen intermittently when running this test suite in Linux and macOS.
+# The issue has been reported to CoreCLR team. We need to work around it for now with the following approach:
+#  1. For pull request and push commit, build without '-CrossGen' and run the parsing tests
+#  2. For daily build, build with '-CrossGen' but don't run the parsing tests
+# In this way, we will continue to exercise these parsing tests for each CI build, and skip them for daily
+# build to avoid a hang.
+# Note: this change should be reverted once the 'CrossGen' issue is fixed by CoreCLR. The issue is tracked by
+#       https://github.com/dotnet/coreclr/issues/9745
+#
+$isDailyBuild = $env:TRAVIS_EVENT_TYPE -eq 'cron' -or $env:TRAVIS_EVENT_TYPE -eq 'api'
+$defaultParamValues = $PSdefaultParameterValues.Clone()
+$IsSkipped = (!$IsWindows -and $isDailyBuild)
+$PSDefaultParameterValues["it:skip"] = $IsSkipped
+$PSDefaultParameterValues["ShouldBeParseError:SkipInTravisFullBuild"] = $IsSkipped
+
 
 Describe 'Positive Parse Properties Tests' -Tags "CI" {
     It 'PositiveParsePropertiesTest' {
@@ -251,7 +268,7 @@ Describe 'Positive Parse Properties Tests' -Tags "CI" {
 Describe 'Negative Parsing Tests' -Tags "CI" {
     ShouldBeParseError 'class' MissingNameAfterKeyword 5
     ShouldBeParseError 'class foo' MissingTypeBody 9
-    ShouldBeParseError 'class foo {' MissingEndCurlyBrace 10
+    ShouldBeParseError 'class foo {' MissingEndCurlyBrace 11
     ShouldBeParseError 'class foo { [int] }' IncompleteMemberDefinition 17
     ShouldBeParseError 'class foo { $private: }' InvalidVariableReference 12
     ShouldBeParseError 'class foo { [int]$global: }' InvalidVariableReference 17
@@ -307,6 +324,8 @@ Describe 'Negative Parsing Tests' -Tags "CI" {
     ShouldBeParseError 'class C { static [int]$i; [void] foo() {$i = 10} }' MissingTypeInStaticPropertyAssignment 40
 
     ShouldBeParseError 'class C : B' MissingTypeBody 11
+
+    ShouldBeParseError 'Class foo { q(){} w(){}' MissingEndCurlyBrace 11
 }
 
 Describe 'Negative methods Tests' -Tags "CI" {
@@ -409,7 +428,7 @@ Describe 'Property Attributes Test' -Tags "CI" {
         [ValidateSet]$v = $t[0]
         It "Should have 2 valid values" { $v.ValidValues.Count | should be 2 }
         It "first value should be a" { $v.ValidValues[0] | should be 'a' }
-        It "second value should be b" { $v.ValidValues[1] -eq 'b' }
+        It "second value should be b" { $v.ValidValues[1] | should be 'b' }
 }
 
 Describe 'Method Attributes Test' -Tags "CI" {
@@ -547,7 +566,7 @@ Describe 'Check PS Class Assembly Test' -Tags "CI" {
         class C1 {}
         $assem = [C1].Assembly
         $attrs = @($assem.GetCustomAttributes($true))
-        $expectedAttr = @($attrs | ? { $_  -is [System.Management.Automation.DynamicClassImplementationAssemblyAttribute] })
+        $expectedAttr = @($attrs | Where-Object { $_  -is [System.Management.Automation.DynamicClassImplementationAssemblyAttribute] })
         It "Expected a DynamicClassImplementationAssembly attribute" { $expectedAttr.Length | should be 1}
 }
 
@@ -652,7 +671,7 @@ function test-it([EE]$ee){$ee}
 Describe 'Type building' -Tags "CI" {
     It 'should build the type only once for scriptblock' {
         $a = $null
-        1..10 | % {
+        1..10 | ForEach-Object {
             class C {}
             if ($a) {
                 $a -eq [C] | Should Be $true
@@ -663,7 +682,7 @@ Describe 'Type building' -Tags "CI" {
 
     It 'should create a new type every time scriptblock executed?' -Pending {
         $sb = [scriptblock]::Create('class A {static [int] $a }; [A]::new()')
-        1..2 | % {
+        1..2 | ForEach-Object {
         $a = $sb.Invoke()[0]
             ++$a::a | Should Be 1
             ++$a::a | Should Be 2
@@ -831,4 +850,8 @@ Describe 'variable analysis' -Tags "CI" {
 
         [B]::getA().getFoo() | Should Be 'foo'
     }
+}
+
+} finally {
+    $global:PSdefaultParameterValues = $defaultParamValues
 }

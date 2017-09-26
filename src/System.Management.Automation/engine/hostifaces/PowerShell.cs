@@ -16,11 +16,6 @@ using Dbg = System.Management.Automation.Diagnostics;
 using System.Diagnostics;
 using Microsoft.Management.Infrastructure;
 
-#if CORECLR
-// Use stub for SerializableAttribute, NoSerializedAttribute, SystemException, ThreadAbortException and ISerializable related types.
-using Microsoft.PowerShell.CoreClr.Stubs;
-#endif
-
 #pragma warning disable 1634, 1691 // Stops compiler from warning about unknown warnings
 
 namespace System.Management.Automation
@@ -3929,7 +3924,7 @@ namespace System.Management.Automation
                     case PSInvocationState.Failed:
                     case PSInvocationState.Stopped:
                         // if the current state is already completed..then no need to process state
-                        // change requests. This will happen if another thread  calls BeginStop
+                        // change requests. This will happen if another thread calls BeginStop
                         return;
                     case PSInvocationState.Running:
                         if (stateInfo.State == PSInvocationState.Running)

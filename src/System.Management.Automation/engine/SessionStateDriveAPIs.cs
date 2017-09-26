@@ -508,12 +508,13 @@ namespace System.Management.Automation
 
             if (result == null && automount)
             {
-                result = AutomountBuiltInDrive(name);
-            }
-
-            if (result == null && this == ExecutionContext.TopLevelSessionState)
-            {
+                // first try to automount as a file system drive
                 result = AutomountFileSystemDrive(name);
+                // if it didn't work, then try automounting as a BuiltIn drive (e.g. "Cert"/"Certificate"/"WSMan")
+                if (result == null)
+                {
+                    result = AutomountBuiltInDrive(name); // internally this calls GetDrive(name, false)
+                }
             }
 
             if (result == null)
@@ -947,7 +948,7 @@ namespace System.Management.Automation
                 return false;
             }
 
-            // A VHD mounted drive gets detected  with a DriveType of DriveType.Fixed
+            // A VHD mounted drive gets detected with a DriveType of DriveType.Fixed
             // when the VHD is mounted, however if the drive is unmounted, such a
             // stale drive is no longer valid and gets detected with DriveType.NoRootDirectory.
             // We would hit this situation in the following scenario:

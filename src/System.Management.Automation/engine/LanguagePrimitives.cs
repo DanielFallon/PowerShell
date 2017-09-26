@@ -935,7 +935,7 @@ namespace System.Management.Automation
                     // but since we don't want this to recurse indefinitely
                     // we explicitly check the case where it would recurse
                     // and deal with it.
-                    IList firstElement = objectArray[0] as IList;
+                    IList firstElement = PSObject.Base(objectArray[0]) as IList;
 
                     if (firstElement == null)
                     {
@@ -1550,7 +1550,7 @@ namespace System.Management.Automation
         ///                                                 query is run using ManagementObjectSearcher Class.
         ///     - to WMIClass                           -   returns ManagementClass represented by the
         ///                                                 string representation of valueToConvert.
-        ///     - to ADSI                               -   returns DirectoryEntry  represented by the
+        ///     - to ADSI                               -   returns DirectoryEntry represented by the
         ///                                                 string representation of valueToConvert.
         ///     - to ADSISearcher                       -   return DirectorySearcher represented by the
         ///                                                 string representation of valueToConvert.
@@ -2127,7 +2127,8 @@ namespace System.Management.Automation
             using (typeConversion.TraceScope("Looking for \"{0}\" cast operator.", methodName))
             {
                 // Get multiple matched Public & Static methods
-                var methods = ClrFacade.GetMethods(targetType, methodName);
+                const BindingFlags flagsToUse = BindingFlags.FlattenHierarchy | BindingFlags.Public | BindingFlags.Static | BindingFlags.InvokeMethod;
+                var methods = targetType.GetMember(methodName, flagsToUse);
                 foreach (MethodInfo method in methods)
                 {
                     if (!resultType.IsAssignableFrom(method.ReturnType))
@@ -2313,7 +2314,7 @@ namespace System.Management.Automation
                                                     IFormatProvider formatProvider,
                                                     TypeTable backupTable)
         {
-            typeConversion.WriteLine("Standard type conversion to  DirectoryEntry.");
+            typeConversion.WriteLine("Standard type conversion to DirectoryEntry.");
 
             string valueToConvertString;
             try
@@ -3339,7 +3340,7 @@ namespace System.Management.Automation
                     valueToConvert.ToString(), resultType.ToString(), e.Message);
             }
 
-            // Check if the result is a defined enum..otherwise throw  an error
+            // Check if the result is a defined enum..otherwise throw an error
             // valueToConvert is the user supplied value. Use that in the error message.
             EnumSingleTypeConverter.ThrowForUndefinedEnum("UndefinedIntegerToEnum", result, valueToConvert, resultType);
 
@@ -3581,20 +3582,20 @@ namespace System.Management.Automation
                                     TypeTable backupTable)
             {
                 IList resultAsList = null;
-                int listSize = 0;
                 Array array = null;
 
                 try
                 {
-                    // typeof(Array).IsAssignableFrom(typeof(object[])) == true
-                    if ((IsScalar) || (!(valueToConvert is Array)))
+                    int listSize = 0;
+                    if (IsScalar)
                     {
                         listSize = 1;
                     }
                     else
                     {
-                        array = (Array)valueToConvert;
-                        listSize = array.Length;
+                        // typeof(Array).IsAssignableFrom(typeof(object[])) == true
+                        array = valueToConvert as Array;
+                        listSize = array != null ? array.Length : 1;
                     }
 
                     resultAsList = ListCtorLambda(listSize);
@@ -3610,7 +3611,7 @@ namespace System.Management.Automation
                 {
                     resultAsList.Add(valueToConvert);
                 }
-                else if (listSize == 1)
+                else if (array == null)
                 {
                     object convertedValue = LanguagePrimitives.ConvertTo(valueToConvert, ElementType, formatProvider);
                     resultAsList.Add(convertedValue);

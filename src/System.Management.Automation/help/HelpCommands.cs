@@ -234,7 +234,9 @@ namespace Microsoft.PowerShell.Commands
 #endif
 
         private readonly Stopwatch _timer = new Stopwatch();
+#if LEGACYTELEMETRY
         private bool _updatedHelp;
+#endif
 
         #endregion
 
@@ -252,7 +254,9 @@ namespace Microsoft.PowerShell.Commands
                 if (ShouldContinue(HelpDisplayStrings.UpdateHelpPromptBody, HelpDisplayStrings.UpdateHelpPromptTitle))
                 {
                     System.Management.Automation.PowerShell.Create(RunspaceMode.CurrentRunspace).AddCommand("Update-Help").Invoke();
+#if LEGACYTELEMETRY
                     _updatedHelp = true;
+#endif
                 }
 
                 UpdatableHelpSystem.SetDisablePromptToUpdateHelp();
@@ -332,9 +336,10 @@ namespace Microsoft.PowerShell.Commands
 
                 _timer.Stop();
 
+#if LEGACYTELEMETRY
                 if (!string.IsNullOrEmpty(Name))
                     Microsoft.PowerShell.Telemetry.Internal.TelemetryAPI.ReportGetHelpTelemetry(Name, countOfHelpInfos, _timer.ElapsedMilliseconds, _updatedHelp);
-
+#endif
                 // Write full help as there is only one help info object
                 if (1 == countOfHelpInfos)
                 {
@@ -634,28 +639,23 @@ namespace Microsoft.PowerShell.Commands
                 this.WriteVerbose(string.Format(CultureInfo.InvariantCulture, HelpDisplayStrings.OnlineHelpUri, uriToLaunch.OriginalString));
                 System.Diagnostics.Process browserProcess = new System.Diagnostics.Process();
 #if UNIX
-                browserProcess.StartInfo.FileName = Platform.IsLinux ? "xdg-open" : /* OS X */ "open";
+                browserProcess.StartInfo.FileName = Platform.IsLinux ? "xdg-open" : /* macOS */ "open";
                 browserProcess.StartInfo.Arguments = uriToLaunch.OriginalString;
                 browserProcess.Start();
-#elif CORECLR
-                // On FullCLR, ProcessStartInfo.UseShellExecute is true by default. This means that the shell will be used when starting the process.
-                // On CoreCLR, UseShellExecute is not supported. To work around this, we check if there is a default browser in the system.
-                // If there is, we lunch it to open the HelpURI. If there isn't, we error out.
-                string webBrowserPath = GetDefaultWebBrowser();
-                if (webBrowserPath == null)
+#else
+                if (Platform.IsNanoServer || Platform.IsIoT)
                 {
+                    // We cannot open the URL in browser on headless SKUs.
                     wrapCaughtException = false;
                     exception = PSTraceSource.NewInvalidOperationException(HelpErrors.CannotLaunchURI, uriToLaunch.OriginalString);
                 }
                 else
                 {
-                    browserProcess.StartInfo = new ProcessStartInfo(webBrowserPath);
-                    browserProcess.StartInfo.Arguments = "\"" + uriToLaunch.OriginalString + "\"";
+                    // We can call ShellExecute directly on Full Windows.
+                    browserProcess.StartInfo.FileName = uriToLaunch.OriginalString;
+                    browserProcess.StartInfo.UseShellExecute = true;
                     browserProcess.Start();
                 }
-#else
-                browserProcess.StartInfo.FileName = uriToLaunch.OriginalString;
-                browserProcess.Start();
 #endif
             }
             catch (InvalidOperationException ioe)
@@ -675,46 +675,6 @@ namespace Microsoft.PowerShell.Commands
                     throw exception;
             }
         }
-
-#if !UNIX
-        /// <summary>
-        /// Gets the path to the default browser by querying the Windows registry.
-        /// </summary>
-        /// <returns></returns>
-        private string GetDefaultWebBrowser()
-        {
-            // Check if there is a default browser in the system.
-            const string httpRegkey = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice";
-            object progId = Registry.GetValue(httpRegkey, "ProgId", null);
-            if (progId != null)
-            {
-                // Query the registry to find the web browser path.
-                using (RegistryKey browserRegKey = Registry.ClassesRoot.OpenSubKey(progId + "\\shell\\open\\command", false))
-                {
-                    string browserPath = browserRegKey?.GetValue(null)?.ToString().Replace(/* remove the quotes */ "\"", "");
-                    if (!string.IsNullOrEmpty(browserPath))
-                    {
-                        const string exeExtension = ".exe";
-                        if (!browserPath.EndsWith(exeExtension, StringComparison.OrdinalIgnoreCase))
-                        {
-                            // Remove any extra chars in the path after ".exe".
-                            int extIndex = browserPath.LastIndexOf(exeExtension, StringComparison.OrdinalIgnoreCase);
-                            browserPath = extIndex > 0 ? browserPath.Substring(0, extIndex + exeExtension.Length) : string.Empty;
-                        }
-
-                        // Make sure the path to the default browser exists.
-                        if (File.Exists(browserPath))
-                        {
-                            return browserPath;
-                        }
-                    }
-                }
-            }
-
-            // By default, return null.
-            return null;
-        }
-#endif
 
         #endregion
 

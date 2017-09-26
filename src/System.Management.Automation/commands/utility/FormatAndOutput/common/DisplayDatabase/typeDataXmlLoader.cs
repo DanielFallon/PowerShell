@@ -616,7 +616,7 @@ namespace Microsoft.PowerShell.Commands.Internal.Format
                 TableRowDefinition trd = new TableRowDefinition { multiLine = row.Wrap };
 
                 // Contains:
-                //   Columns --- TableColumnItems  cardinality: 0..1
+                //   Columns --- TableColumnItems cardinality: 0..1
                 // No SelectedBy is supplied in the TableControlRow
                 if (row.Columns.Count > 0)
                 {
@@ -789,7 +789,7 @@ namespace Microsoft.PowerShell.Commands.Internal.Format
         private void LoadListControlEntriesFromObjectModel(ListControlBody listBody, List<ListControlEntry> entries, int viewIndex, string typeName)
         {
             // Contains:
-            //   Entries --- ListEntries  cardinality 1
+            //   Entries --- ListEntries cardinality 1
             foreach (ListControlEntry listEntry in entries)
             {
                 ListControlEntryDefinition lved = LoadListControlEntryDefinitionFromObjectModel(listEntry, viewIndex, typeName);
@@ -1832,8 +1832,7 @@ namespace Microsoft.PowerShell.Commands.Internal.Format
             {
                 case DisplayResourceManagerCache.AssemblyBindingStatus.FoundInPath:
                     {
-                        assemblyDisplayName =
-                            System.IO.Path.Combine(resource.loadingInfo.fileDirectory, resource.assemblyName);
+                        assemblyDisplayName = resource.assemblyLocation;
                     }
                     break;
                 case DisplayResourceManagerCache.AssemblyBindingStatus.FoundInGac:

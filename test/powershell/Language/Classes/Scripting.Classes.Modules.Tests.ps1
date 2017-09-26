@@ -1,6 +1,6 @@
 ﻿Describe 'PSModuleInfo.GetExportedTypeDefinitions()' -Tags "CI" {
     It "doesn't throw for any module" {
-        $discard = Get-Module -ListAvailable | % { $_.GetExportedTypeDefinitions() }
+        $discard = Get-Module -ListAvailable | ForEach-Object { $_.GetExportedTypeDefinitions() }
         $true | Should Be $true # we only verify that we didn't throw. This line contains a dummy Should to make pester happy.
     }
 }
@@ -24,12 +24,12 @@ Describe 'use of a module from two runspaces' -Tags "CI" {
         }
         New-ModuleManifest @manifestParams
 
-        if ($env:PSMODULEPATH -notlike "*$TestModulePath*") {
-            $env:PSMODULEPATH += "$([System.IO.Path]::PathSeparator)$TestModulePath"
+        if ($env:PSModulePath -notlike "*$TestModulePath*") {
+            $env:PSModulePath += "$([System.IO.Path]::PathSeparator)$TestModulePath"
         }
     }
 
-    $originalPSMODULEPATH = $env:PSMODULEPATH
+    $originalPSModulePath = $env:PSModulePath
     try {
 
         New-TestModule -Name 'Random' -Content @'
@@ -44,14 +44,14 @@ class RandomWrapper
 '@
 
         It 'use different sessionStates for different modules' {
-            $ps = 1..2 | % { $p = [powershell]::Create().AddScript(@'
+            $ps = 1..2 | ForEach-Object { $p = [powershell]::Create().AddScript(@'
 Import-Module Random
 '@)
                 $p.Invoke() > $null
                 $p
             }
-            $res = 1..2 | % {
-                0..1 | % {
+            $res = 1..2 | ForEach-Object {
+                0..1 | ForEach-Object {
                     $ps[$_].Commands.Clear()
                     # The idea: instance created inside the context, in one runspace.
                     # Method is called on instance in the different runspace, but it should know about the origin.
@@ -67,7 +67,7 @@ Import-Module Random
         }
 
     } finally {
-        $env:PSMODULEPATH = $originalPSMODULEPATH
+        $env:PSModulePath = $originalPSModulePath
     }
 
 }

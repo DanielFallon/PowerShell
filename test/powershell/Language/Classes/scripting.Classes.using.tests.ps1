@@ -1,8 +1,6 @@
 Describe 'using module' -Tags "CI" {
     BeforeAll {
-        $originalPSMODULEPATH = $env:PSMODULEPATH
-
-        Import-Module $PSScriptRoot\..\LanguageTestSupport.psm1
+        $originalPSModulePath = $env:PSModulePath
 
         function New-TestModule {
             param(
@@ -23,15 +21,15 @@ Describe 'using module' -Tags "CI" {
             }
 
             $resolvedTestDrivePath = Split-Path ((get-childitem "${TestDrive}\$ModulePathPrefix")[0].FullName)
-            if (-not ($env:PSMODULEPATH -like "*$resolvedTestDrivePath*")) {
-                $env:PSMODULEPATH += "$([System.IO.Path]::PathSeparator)$resolvedTestDrivePath"
+            if (-not ($env:PSModulePath -like "*$resolvedTestDrivePath*")) {
+                $env:PSModulePath += "$([System.IO.Path]::PathSeparator)$resolvedTestDrivePath"
             }
         }
 
     }
 
     AfterAll {
-        $env:PSMODULEPATH = $originalPSMODULEPATH
+        $env:PSModulePath = $originalPSModulePath
     }
 
     It 'Import-Module has ImplementedAssembly, when classes are present in the module' {
@@ -257,7 +255,7 @@ New-Object Foo
         It "report an error on incomplete using input" {
             $err = Get-ParseResults "using module @{ModuleName = 'FooWithManifest'; FooWithManifest = 1." # missing closing bracket
             $err.Count | Should Be 2
-            $err[0].ErrorId | Should Be 'IncompleteHashLiteral'
+            $err[0].ErrorId | Should Be 'MissingEndCurlyBrace'
             $err[1].ErrorId | Should Be 'RequiresModuleInvalid'
         }
 
@@ -349,7 +347,7 @@ using module Foo
 
         # 'using module' behavior must be aligned with Import-Module.
         # Import-Module does the following:
-        # 1) find the first directory from $env:PSMODULEPATH that contains the module
+        # 1) find the first directory from $env:PSModulePath that contains the module
         # 2) Import highest available version of the module
         # In out case TestDrive:\Module is before TestDrive:\Modules2 and so 2.3.0 is the right version
         It "uses the last module, if multiple versions are present" {
@@ -436,12 +434,12 @@ function foo()
     }
 
 
-    # here we are back to normal $env:PSMODULEPATH, but all modules are there
+    # here we are back to normal $env:PSModulePath, but all modules are there
     Context "Module by path" {
         BeforeAll {
             # this is a setup for Context "Module by path"
             New-TestModule -Name FooForPaths -Content 'class Foo { [string] GetModuleName() { return "FooForPaths" } }'
-            $env:PSMODULEPATH = $originalPSMODULEPATH
+            $env:PSModulePath = $originalPSModulePath
 
             new-item -type directory -Force TestDrive:\FooRelativeConsumer
             Set-Content -Path "${TestDrive}\FooRelativeConsumer\FooRelativeConsumer.ps1" -Value @'
@@ -457,8 +455,8 @@ class Bar : Foo {}
 '@
         }
 
-        It 'use non-modified PSMODULEPATH' {
-            $env:PSMODULEPATH | Should Be $originalPSMODULEPATH
+        It 'use non-modified PSModulePath' {
+            $env:PSModulePath | Should Be $originalPSModulePath
         }
 
         It "can be accessed by relative path" {
@@ -523,6 +521,28 @@ using module FooForPaths
             } finally {
                 Pop-Location
             }
+        }
+    }
+
+    Context "module has non-terminating error handled with 'SilentlyContinue'" {
+        BeforeAll {
+            $testFile = Join-Path -Path $TestDrive -ChildPath "testmodule.psm1"
+            $content = @'
+Get-Command -CommandType Application -Name NonExisting -ErrorAction SilentlyContinue
+class TestClass { [string] GetName() { return "TestClass" } }
+'@
+            Set-Content -Path $testFile -Value $content -Force
+        }
+        AfterAll {
+            Remove-Module -Name testmodule -Force -ErrorAction SilentlyContinue
+        }
+
+        It "'using module' should succeed" {
+            $result = [scriptblock]::Create(@"
+using module $testFile
+[TestClass]::new()
+"@).Invoke()
+            $result.GetName() | Should Be "TestClass"
         }
     }
 }

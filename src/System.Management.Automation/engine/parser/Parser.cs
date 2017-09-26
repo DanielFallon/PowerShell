@@ -2451,7 +2451,7 @@ namespace System.Management.Automation.Language
                     {
                         endErrorStatement = fileNameExpr.Extent;
                         condition = new PipelineAst(fileNameExpr.Extent,
-                                                    new CommandExpressionAst(fileNameExpr.Extent, fileNameExpr, null));
+                                                    new CommandExpressionAst(fileNameExpr.Extent, fileNameExpr, null), background: false);
 
                         if (!specifiedFlags.ContainsKey("file"))
                         {
@@ -3803,8 +3803,8 @@ namespace System.Management.Automation.Language
         private StatementAst ClassDefinitionRule(List<AttributeBaseAst> customAttributes, Token classToken)
         {
             //G  class-statement:
-            //G      'class'   new-lines:opt   class-name   new-lines:opt  '{'   class-member-list   '}'
-            //G      'class'   new-lines:opt   class-name   new-lines:opt  ':'  base-type-list  '{'  new-lines:opt  class-member-list:opt  '}'
+            //G      attribute-list:opt   'class'   new-lines:opt   class-name   new-lines:opt  '{'   class-member-list   '}'
+            //G      attribute-list:opt   'class'   new-lines:opt   class-name   new-lines:opt  ':'  base-type-list  '{'  new-lines:opt  class-member-list:opt  '}'
             //G
             //G  class-name:
             //G      simple-name
@@ -3909,7 +3909,7 @@ namespace System.Management.Automation.Language
                 if (rCurly.Kind != TokenKind.RCurly)
                 {
                     UngetToken(rCurly);
-                    ReportIncompleteInput(lastExtent, () => ParserStrings.MissingEndCurlyBrace);
+                    ReportIncompleteInput(After(lCurly), rCurly.Extent, () => ParserStrings.MissingEndCurlyBrace);
                 }
                 else
                 {
@@ -3965,6 +3965,7 @@ namespace System.Management.Automation.Language
             //G  member-attribute:
             //G      attribute
             //G      'static'
+            //G      'hidden'
 
             IScriptExtent startExtent = null;
             var attributeList = new List<AttributeAst>();
@@ -4269,7 +4270,7 @@ namespace System.Management.Automation.Language
             if (rCurly.Kind != TokenKind.RCurly)
             {
                 UngetToken(rCurly);
-                ReportIncompleteInput(After(lastExtent), () => ParserStrings.MissingEndCurlyBrace);
+                ReportIncompleteInput(After(lCurly), rCurly.Extent, () => ParserStrings.MissingEndCurlyBrace);
             }
 
             var startExtent = customAttributes != null && customAttributes.Count > 0
@@ -5181,6 +5182,7 @@ namespace System.Management.Automation.Language
 
             Token pipeToken = null;
             bool scanning = true;
+            bool background = false;
             while (scanning)
             {
                 CommandBaseAst commandAst;
@@ -5292,6 +5294,11 @@ namespace System.Management.Automation.Language
                     case TokenKind.EndOfInput:
                         scanning = false;
                         continue;
+                    case TokenKind.Ampersand:
+                        SkipToken();
+                        scanning = false;
+                        background = true;
+                        break;
                     case TokenKind.Pipe:
                         SkipToken();
                         SkipNewlines();
@@ -5327,7 +5334,7 @@ namespace System.Management.Automation.Language
                 return null;
             }
 
-            return new PipelineAst(ExtentOf(startExtent, pipelineElements[pipelineElements.Count - 1]), pipelineElements);
+            return new PipelineAst(ExtentOf(startExtent, pipelineElements[pipelineElements.Count - 1]), pipelineElements, background);
         }
 
         private RedirectionAst RedirectionRule(RedirectionToken redirectionToken, RedirectionAst[] redirections, ref IScriptExtent extent)
@@ -5671,15 +5678,10 @@ namespace System.Management.Automation.Language
                         case TokenKind.Semi:
                         case TokenKind.AndAnd:
                         case TokenKind.OrOr:
+                        case TokenKind.Ampersand:
                             UngetToken(token);
                             scanning = false;
                             continue;
-
-                        case TokenKind.Ampersand:
-                            // ErrorRecovery: just ignore the token.
-                            endExtent = token.Extent;
-                            ReportError(token.Extent, () => ParserStrings.AmpersandNotAllowed);
-                            break;
 
                         case TokenKind.MinusMinus:
                             endExtent = token.Extent;
@@ -6344,8 +6346,8 @@ namespace System.Management.Automation.Language
                 // Note -  the error handling function inspects the error message body to extra the ParserStrings property name. It uses this value as the errorid.
                 var errorMessageExpression = parsingSchemaElement ?
                     (Expression<Func<string>>)(() => ParserStrings.IncompletePropertyAssignmentBlock)
-                    : (Expression<Func<string>>)(() => ParserStrings.IncompleteHashLiteral);
-                ReportIncompleteInput(keyValuePairs.Any() ? After(keyValuePairs.Last().Item2) : After(atCurlyToken), rCurly.Extent, errorMessageExpression);
+                    : (Expression<Func<string>>)(() => ParserStrings.MissingEndCurlyBrace);
+                ReportIncompleteInput(After(atCurlyToken), rCurly.Extent, errorMessageExpression);
                 endExtent = Before(rCurly);
             }
             else
@@ -6394,7 +6396,7 @@ namespace System.Management.Automation.Language
                     ? (() => (ParserStrings.MissingEqualsInPropertyAssignmentBlock))
                     : (Expression<Func<string>>)(() => ParserStrings.MissingEqualsInHashLiteral);
                 ReportError(errorExtent, errorMessageExpression);
-                SyncOnError(true, TokenKind.RCurly, TokenKind.Semi, TokenKind.NewLine);
+                SyncOnError(false, TokenKind.RCurly, TokenKind.Semi, TokenKind.NewLine);
                 return new KeyValuePair(key, new ErrorStatementAst(errorExtent));
             }
 

@@ -13,14 +13,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.PowerShell.Commands.Internal.Format;
 using System.Management.Automation.Host;
 using System.Management.Automation.Internal;
-
-#if CORECLR
-// Use stubs for SerializationInfo, SecurityPermissionAttribute and Serializable
-using Microsoft.PowerShell.CoreClr.Stubs;
-#else
-// TODO:CORECLR Permissions is not available on CORE CLR yet
 using System.Security.Permissions;
-#endif
 
 namespace System.Management.Automation.Runspaces
 {
@@ -293,7 +286,7 @@ namespace System.Management.Automation.Runspaces
         }
 
         /// <summary>
-        /// Removes the <paramref name="formatFile"/> from the current FormatTable's  file list.
+        /// Removes the <paramref name="formatFile"/> from the current FormatTable's file list.
         /// The FormatTable will not reflect the change until Update is called.
         /// </summary>
         /// <param name="formatFile"></param>
@@ -313,8 +306,7 @@ namespace System.Management.Automation.Runspaces
         /// <returns></returns>
         public static FormatTable LoadDefaultFormatFiles()
         {
-            string shellId = Utils.DefaultPowerShellShellID;
-            string psHome = Utils.GetApplicationBase(shellId);
+            string psHome = Utils.DefaultPowerShellAppBase;
             List<string> defaultFormatFiles = new List<string>();
             if (!string.IsNullOrEmpty(psHome))
             {

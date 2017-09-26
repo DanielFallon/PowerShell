@@ -18,11 +18,6 @@ using System.Text;
 using Microsoft.PowerShell.Commands;
 using Dbg = System.Management.Automation.Diagnostics;
 
-#if CORECLR
-// Use stubs for SerializableAttribute, SystemException, SerializationInfo and ISerializable related types.
-using Microsoft.PowerShell.CoreClr.Stubs;
-#endif
-
 // Stops compiler from warning about unknown warnings
 #pragma warning disable 1634, 1691
 
@@ -563,7 +558,7 @@ namespace System.Management.Automation
         public string Command { get; }
 
         /// <summary>
-        /// Status of the  command execution.
+        /// Status of the command execution.
         /// </summary>
         public JobStateInfo JobStateInfo { get; private set; } = new JobStateInfo(JobState.NotStarted);
 
@@ -1928,7 +1923,7 @@ namespace System.Management.Automation
             return returnJobList;
         } // GetResultForHelper
 
-        #endregion  internal methods
+        #endregion internal methods
 
         #region Connection Support
 
@@ -2803,15 +2798,6 @@ namespace System.Management.Automation
             _remotePipeline.ConnectAsync();
         }
 
-        /// <summary>
-        /// Removes job data aggregation callbacks.  Used for jobs
-        /// stopped in debugger so that debugger can access data.
-        /// </summary>
-        internal void RemoveJobAggregation()
-        {
-            RemoveAggreateCallbacksFromHelper(Helper);
-        }
-
         #endregion
 
         #region stop
@@ -3078,32 +3064,6 @@ namespace System.Management.Automation
         }
 
         /// <summary>
-        /// Used to detect an Invoke-Command running command breakpoint hit.
-        /// In this case disconnect the runspace so that a debugger can be
-        /// attached later by the user.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void HandleRunspaceAvailabilityChangedForInvoke(object sender, RunspaceAvailabilityEventArgs e)
-        {
-            RemoteRunspace remoteRunspace = sender as RemoteRunspace;
-            if (remoteRunspace != null &&
-                e.RunspaceAvailability == RunspaceAvailability.RemoteDebug)
-            {
-                remoteRunspace.AvailabilityChanged -= HandleRunspaceAvailabilityChangedForInvoke;
-
-                try
-                {
-                    remoteRunspace.DisconnectAsync();
-                }
-                catch (PSNotImplementedException) { }
-                catch (InvalidRunspacePoolStateException) { }
-                catch (InvalidRunspaceStateException) { }
-                catch (PSInvalidOperationException) { }
-            }
-        }
-
-        /// <summary>
         /// Handle method executor stream events.
         /// </summary>
         /// <param name="sender">The sender.</param>
@@ -3146,10 +3106,6 @@ namespace System.Management.Automation
                 // since we got state changed event..we dont need to listen on
                 // URI redirections anymore
                 ((RemoteRunspace)Runspace).URIRedirectionReported -= HandleURIDirectionReported;
-
-                // We monitor runspace RemoteDebug availability only while
-                // this pipeline is running.
-                ((RemoteRunspace)Runspace).AvailabilityChanged -= HandleRunspaceAvailabilityChangedForInvoke;
             }
 
             PipelineState state = e.PipelineStateInfo.State;
@@ -3309,7 +3265,8 @@ namespace System.Management.Automation
                             helper);
             }
             // there is a failure reason available in the runspace
-            else if (runspace.RunspaceStateInfo.State == RunspaceState.Broken)
+            else if ((runspace.RunspaceStateInfo.State == RunspaceState.Broken) ||
+                     (runspace.RunspaceStateInfo.Reason != null))
             {
                 failureException = runspace.RunspaceStateInfo.Reason;
                 object targetObject = runspace.ConnectionInfo.ComputerName;
@@ -3628,12 +3585,6 @@ namespace System.Management.Automation
         /// aggregation has to be stopped</param>
         protected void StopAggregateResultsFromHelper(ExecutionCmdletHelper helper)
         {
-            // Ensure the Runspace availability handler is removed on command completion.
-            if (helper.PipelineRunspace != null)
-            {
-                helper.PipelineRunspace.AvailabilityChanged -= HandleRunspaceAvailabilityChangedForInvoke;
-            }
-
             // Get the pipeline associated with this helper and register for appropriate events
             RemoveAggreateCallbacksFromHelper(helper);
 
@@ -4123,7 +4074,6 @@ namespace System.Management.Automation
                 RemoteRunspace remoteRS = helper.Pipeline.Runspace as RemoteRunspace;
                 if (null != remoteRS)
                 {
-                    remoteRS.AvailabilityChanged += HandleRunspaceAvailabilityChangedForInvoke;
                     remoteRS.StateChanged += HandleRunspaceStateChanged;
 
                     if (remoteRS.RunspaceStateInfo.State == RunspaceState.BeforeOpen)
@@ -4357,7 +4307,6 @@ namespace System.Management.Automation
                     if (e.RunspaceStateInfo.State != RunspaceState.Opened)
                     {
                         remoteRS.StateChanged -= HandleRunspaceStateChanged;
-                        remoteRS.AvailabilityChanged -= HandleRunspaceAvailabilityChangedForInvoke;
                     }
                 }
             }
